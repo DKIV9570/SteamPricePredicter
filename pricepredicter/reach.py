@@ -25,10 +25,26 @@ LANDMARK_OFFSET_DAYS = 1
 
 
 STATE = ["lw", "best_cut_so_far", "price_ratio_now", "regular_ratio_now", "on_sale_now", "n_sales_so_far",
-         "last_sale_cut", "prev_cut", "cut_trend", "weeks_since_sale", "sales_since_deeper"]
-TASK = ["threshold", "gap_to_target", "reached_before", "horizon_days", "majors_in_horizon", "days_to_next_major"]
+         "last_sale_cut", "prev_cut", "cut_trend", "weeks_since_sale", "sales_since_deeper",
+         "floor_cut_so_far", "n_regular_sales"]
+TASK = ["threshold", "gap_to_target", "reached_before", "horizon_days", "majors_in_horizon", "days_to_next_major",
+        "n_sales_ge_target", "share_ge_target"]
 EARLY_REVIEWS = ["log_w1_reviews", "w1_score"]
-MONOTONE = {"threshold": -1, "gap_to_target": -1, "horizon_days": 1, "majors_in_horizon": 1}
+# No constraint on the target depth itself: a game whose every sale goes to 40% must be free to
+# score 20% and 30% alike, which a monotone threshold effect forbids. "Deeper can't be likelier"
+# is enforced after prediction instead (serve.predict_now).
+MONOTONE = {"horizon_days": 1, "majors_in_horizon": 1, "share_ge_target": 1}
+
+
+def regular_sale_depths(g: pd.DataFrame, sales: pd.DataFrame) -> pd.DataFrame:
+    """Regular sales (after the launch window) with their depth vs the LAUNCH price.
+    A game's floor — its shallowest sale so far — barely ever gets undercut (~1% of later
+    sales), so "how many past sales reached X" says a lot about whether the next one will."""
+    s = sales[(sales["kind"] == "regular") & sales["appid"].isin(g["appid"])]
+    s = s[["appid", "start", "max_cut", "regular"]].merge(g[["appid", "launch_price"]], on="appid")
+    s["start"] = s["start"].dt.tz_convert("US/Pacific").dt.tz_localize(None).astype("datetime64[ns]")
+    s["eff_cut"] = (1 - s["regular"] * (1 - s["max_cut"] / 100) / s["launch_price"]) * 100
+    return s[["appid", "start", "eff_cut"]].sort_values(["appid", "start"]).reset_index(drop=True)
 
 
 def attach_features(rows: pd.DataFrame, static: pd.DataFrame, content: pd.DataFrame) -> pd.DataFrame:
@@ -202,17 +218,29 @@ def landmark_states(g: pd.DataFrame, tl: pd.DataFrame, sales: pd.DataFrame,
     lm["last_sale_cut"] = lm["max_cut"]
     lm["cut_trend"] = lm["max_cut"] - lm["first_cut"]  # deepening so far?
     lm["weeks_since_sale"] = (lm["L"] - lm["start"]).dt.days / 7
+
+    # Floor: the shallowest regular sale so far (vs launch price) and how many there were
+    h = regular_sale_depths(g, sales)
+    h["floor_cut_so_far"] = h.groupby("appid")["eff_cut"].cummin()
+    h["n_regular_sales"] = h.groupby("appid").cumcount() + 1
+    lm = pd.merge_asof(lm.drop(columns=["start"]),
+                       h.rename(columns={"start": "h_start"}).sort_values("h_start")[
+                           ["appid", "h_start", "floor_cut_so_far", "n_regular_sales"]],
+                       left_on="L", right_on="h_start", by="appid", direction="backward", allow_exact_matches=False)
+    lm["n_regular_sales"] = lm["n_regular_sales"].fillna(0)
     keep = ["appid", "lw", "L", "best_cut_so_far", "price_ratio_now", "regular_ratio_now", "on_sale_now",
-            "n_sales_so_far", "last_sale_cut", "prev_cut", "cut_trend", "weeks_since_sale", "sales_since_deeper"]
+            "n_sales_so_far", "last_sale_cut", "prev_cut", "cut_trend", "weeks_since_sale", "sales_since_deeper",
+            "floor_cut_so_far", "n_regular_sales"]
     return lm[keep]
 
 
 def expand_rows(states: pd.DataFrame, tl: pd.DataFrame, majors: pd.DataFrame, data_end: pd.Timestamp,
-                thresholds=THRESHOLDS, predict: bool = False) -> pd.DataFrame:
+                thresholds=THRESHOLDS, predict: bool = False, hist: pd.DataFrame | None = None) -> pd.DataFrame:
     """(landmark state) x thresholds x horizons, labelled with whether the price is at
     >= X% off at some point within (L, L + horizon] — first time or again.
     Thresholds the price already meets at L are skipped (the answer is "buy now").
-    predict=True keeps unobserved future windows (no labels)."""
+    predict=True keeps unobserved future windows (no labels).
+    hist: regular_sale_depths(), for "how many past sales reached this target"."""
     st = np.sort(majors["start"].to_numpy("datetime64[ns]"))
     x = states.sort_values("L").reset_index(drop=True)
     L = x["L"].to_numpy("datetime64[ns]")
@@ -238,6 +266,13 @@ def expand_rows(states: pd.DataFrame, tl: pd.DataFrame, majors: pd.DataFrame, da
                            direction="forward", allow_exact_matches=False)["ts"]
         days_to_hit = ((nh - x["L"]).dt.total_seconds() / 86400).to_numpy()
         open_ = cut_now < thr - CUT_TOL
+        n_ge = np.zeros(len(x))
+        if hist is not None:
+            hh = hist[hist["eff_cut"] >= thr - CUT_TOL].copy()
+            hh["n_ge"] = hh.groupby("appid").cumcount() + 1
+            n_ge = pd.merge_asof(x[["appid", "L"]], hh.sort_values("start")[["appid", "start", "n_ge"]],
+                                 left_on="L", right_on="start", by="appid", direction="backward",
+                                 allow_exact_matches=False)["n_ge"].fillna(0).to_numpy()
         for hname, hd in horizons:
             reached = days_to_hit <= hd
             m = open_ & ~np.isnan(hd) & (predict | reached | (hd <= end_days))
@@ -253,12 +288,15 @@ def expand_rows(states: pd.DataFrame, tl: pd.DataFrame, majors: pd.DataFrame, da
             p["majors_in_horizon"] = hi - lo
             p["gap_to_target"] = thr - p["best_cut_so_far"]
             p["reached_before"] = (p["best_cut_so_far"] >= thr - CUT_TOL).astype(int)
+            p["n_sales_ge_target"] = n_ge[m]
+            p["share_ge_target"] = n_ge[m] / p["n_regular_sales"].replace(0, np.nan)
             if not predict:
                 p["reached"] = reached[m].astype(int)
             parts.append(p)
     if not parts:  # every target already met (or none asked)
         return pd.DataFrame(columns=base_cols + ["threshold", "horizon", "horizon_days", "majors_in_horizon",
-                                                 "gap_to_target", "reached_before"])
+                                                 "gap_to_target", "reached_before", "n_sales_ge_target",
+                                                 "share_ge_target"])
     out = pd.concat(parts, ignore_index=True)
     out["horizon"] = pd.Categorical(out["horizon"], ["next_major", "second_major"] + [str(h) for h in FIXED_HORIZONS])
     return out

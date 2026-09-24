@@ -17,13 +17,17 @@ import pandas as pd
 from .config import MODELS, PROCESSED
 from .features import build_game_table
 from .reach import (CUT_TOL, VELOCITY, attach_features, best_cut_by_age, expand_rows, landmark_states,
-                    price_timeline, static_extras, velocity_features)
+                    price_timeline, regular_sale_depths, static_extras, velocity_features)
 from .sale_calendar import all_majors
 from .similarity import game_knn_features, publisher_knn_features
 
 ART = MODELS
 N_EMB_FEATS = 16
 PREDICT_CHUNK = 500_000
+FLOOR_MIN_SALES = 5
+# Targets always scored together, so rules that compare targets (the floor rule) apply
+# no matter which single target a user asks about
+STANDARD_CUTS = [20, 25, 30, 33, 40, 50, 60, 67, 70, 75, 80]
 
 
 @dataclass
@@ -80,9 +84,12 @@ def predict_now(feats: dict, ref: dict, art: Artifacts, now: pd.Timestamp, thres
     asked at `now` (US/Pacific, tz-naive). Returns (rows, states). Targets the price already
     meets are absent from rows."""
     g, tl = feats["g"], feats["tl"]
+    asked = set(thresholds)
+    thresholds = sorted(asked | set(STANDARD_CUTS)) if asked else []
     sales = ref["sales"][ref["sales"]["appid"].isin(g["appid"])]
     states = landmark_states(g, tl, sales, now, at=now)
-    rows = expand_rows(states, tl, ref["majors"], now, thresholds=thresholds, predict=True)
+    rows = expand_rows(states, tl, ref["majors"], now, thresholds=thresholds, predict=True,
+                       hist=regular_sale_depths(g, sales))
     if rows.empty:
         return pd.DataFrame(columns=["appid", "threshold", "horizon", "horizon_days", "p"]), states
     rows = attach_features(rows, feats["static"], ref["content"])
@@ -91,11 +98,18 @@ def predict_now(feats: dict, ref: dict, art: Artifacts, now: pd.Timestamp, thres
         rows = rows.merge(vel, on=["appid", "L"], how="left")
     rows["p"] = np.concatenate([art.model.predict(rows[art.features].iloc[i:i + PREDICT_CHUNK].astype(np.float32))
                                 for i in range(0, len(rows), PREDICT_CHUNK)])
+    # Targets at or below a well-established floor (every past sale went at least that deep)
+    # are the same event — "it goes on sale" — so they get one probability. Floors are broken
+    # by ~1% of later sales; on held-out games this rule leaves accuracy unchanged, but it
+    # removes contradictions like "30% off: 49%, 20% off: 57%" for a game that never sold at 20%.
+    below = (rows["n_regular_sales"] >= FLOOR_MIN_SALES) & (rows["floor_cut_so_far"] >= rows["threshold"] - CUT_TOL)
+    rows.loc[below, "p"] = rows[below].groupby(["appid", "horizon"], observed=True)["p"].transform("mean")
     # A longer window can't be less likely; a deeper cut can't be more likely
     rows = rows.sort_values(["appid", "threshold", "horizon_days"])
     rows["p"] = rows.groupby(["appid", "threshold"])["p"].cummax()
     rows = rows.sort_values(["appid", "horizon", "threshold"])
     rows["p"] = rows.groupby(["appid", "horizon"], observed=True)["p"].cummin()
+    rows = rows[rows["threshold"].isin(asked)]
     return rows[["appid", "threshold", "horizon", "horizon_days", "p"]], states
 
 
