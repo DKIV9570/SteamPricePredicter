@@ -20,6 +20,7 @@ import pandas as pd
 from .config import PROCESSED, RAW
 
 STORE_PER_RUN = 1200        # Steam store fetches (2 requests each)
+W1_PER_RUN = 3000           # first-week review lookups (1 request each)
 YOUNG_DAYS = 60             # re-fetch SteamSpy tags while a game is this young...
 YOUNG_REFRESH_DAYS = 7      # ...at most once a week
 
@@ -65,7 +66,7 @@ def main():
     todo = missing("steam_store")[:STORE_PER_RUN]
     if todo:
         run("fetch_steam_store", "--interval", 1.5, "--appids", *todo)
-    run("fetch_first_week_reviews")
+    run("fetch_first_week_reviews", "--limit", W1_PER_RUN)
     retag = young_games_to_retag()
     run("fetch_steamspy_details", "--interval", 1.05, *(["--refresh", *retag] if retag else []))
     run("build_content", required=True)

@@ -12,6 +12,7 @@ import re
 import pandas as pd
 
 from .config import ITAD_RAW, PROCESSED, RAW
+from .rawio import iter_json
 
 # ITAD only started tracking around 2012; earlier releases have no usable first-sale info
 MIN_RELEASE = "2014-01-01"
@@ -92,7 +93,7 @@ def main():
     names_path = RAW / "names.json"
     steam_release = {int(k): v["release"] for k, v in json.loads(names_path.read_text(encoding="utf-8")).items()
                      if v.get("release")} if names_path.exists() else {}
-    records = (json.loads(p.read_text(encoding="utf-8")) for p in ITAD_RAW.glob("*.json"))
+    records = (rec for _, rec in iter_json(ITAD_RAW))
     games, changes, sales = process_records(((r, catalog.get(str(r["appid"]), {})) for r in records),
                                             release_fallback=steam_release)
 

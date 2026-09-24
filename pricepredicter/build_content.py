@@ -1,16 +1,16 @@
 """Step 6: content tables from SteamSpy details + Steam store data.
 
-tags.parquet      appid, tag, votes            (long format, SteamSpy user tags)
-content.parquet   one row per app: languages, store categories, genres,
-                  metacritic, description, first-month reviews
+tags.parquet          appid, tag, votes            (long format, SteamSpy user tags)
+content.parquet       one row per app: languages, store categories, genres,
+                      metacritic, description, first-month / first-week reviews
+review_months.parquet appid, month, reviews        (sales-curve proxy)
 
     python -m pricepredicter.build_content
 """
-import json
-
 import pandas as pd
 
 from .config import PROCESSED, RAW
+from .rawio import iter_json
 
 # Store categories worth keeping as flags (the rest are Steam-feature noise)
 CATEGORIES = {
@@ -62,9 +62,8 @@ def main():
     games = pd.read_parquet(PROCESSED / "games.parquet")[["appid", "steam_release"]]
     t0 = games.set_index("appid")["steam_release"]
 
-    tag_rows, content = [], {}
-    for p in (RAW / "steamspy_details").glob("*.json"):
-        d = json.loads(p.read_text(encoding="utf-8"))
+    tag_rows, content, months = [], {}, []
+    for p, d in iter_json(RAW / "steamspy_details"):
         appid = int(p.stem)
         tags = d.get("tags") or {}
         if isinstance(tags, dict):  # SteamSpy returns [] when an app has no tags
@@ -73,9 +72,9 @@ def main():
         content[appid] = {"appid": appid, "n_languages": len(langs) or None,
                           "spy_genre": d.get("genre")}
 
-    for p in (RAW / "steam_store").glob("*.json"):
-        rec = json.loads(p.read_text(encoding="utf-8"))
+    for _, rec in iter_json(RAW / "steam_store"):
         appid = rec["appid"]
+        months.append(review_months(rec.get("review_rollups"), appid))
         row = content.setdefault(appid, {"appid": appid})
         det = rec.get("details") or {}
         row["has_store"] = bool(det)
@@ -89,8 +88,7 @@ def main():
         up, down = first_month_reviews(rec.get("review_rollups"), t0.get(appid))
         row["m1_reviews_up"], row["m1_reviews_down"] = up, down
 
-    for p in (RAW / "steam_reviews_w1").glob("*.json"):
-        rec = json.loads(p.read_text(encoding="utf-8"))
+    for _, rec in iter_json(RAW / "steam_reviews_w1"):
         row = content.setdefault(rec["appid"], {"appid": rec["appid"]})
         row["w1_reviews"], row["w1_positive"] = rec.get("total"), rec.get("positive")
 
@@ -99,9 +97,7 @@ def main():
     tags.to_parquet(PROCESSED / "tags.parquet", index=False)
     content.to_parquet(PROCESSED / "content.parquet", index=False)
 
-    timeline = pd.concat(
-        [review_months(json.loads(p.read_text(encoding="utf-8")).get("review_rollups"), int(p.stem))
-         for p in (RAW / "steam_store").glob("*.json")], ignore_index=True)
+    timeline = pd.concat(months, ignore_index=True)
     timeline.to_parquet(PROCESSED / "review_months.parquet", index=False)
     print(f"review timeline: {timeline.appid.nunique():,} apps, {len(timeline):,} app-months")
     print(f"tags: {len(tags):,} rows, {tags.appid.nunique():,} apps, {tags.tag.nunique()} distinct tags")

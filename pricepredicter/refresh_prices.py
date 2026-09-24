@@ -36,7 +36,10 @@ def main() -> int:
             if deal is None or appid is None:
                 continue
             path = ITAD_RAW / f"{appid}.json"
-            rec = json.loads(path.read_text(encoding="utf-8"))
+            try:
+                rec = json.loads(path.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue  # unreadable file; skipped until it's re-fetched
             hist = rec["history"]  # newest first
             ts = pd.Timestamp(deal["timestamp"])
             last = hist[0] if hist else None

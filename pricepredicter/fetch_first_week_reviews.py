@@ -26,6 +26,7 @@ WINDOW_DAYS = 7
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--interval", type=float, default=1.0)
+    ap.add_argument("--limit", type=int, default=None, help="at most this many apps per run")
     args = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
@@ -33,7 +34,7 @@ def main():
     u = games[games["usable"]].sample(frac=1.0, random_state=0)
     # The first week must be over, or we'd store a partial count and never revisit it
     week_over = u["steam_release"] < pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=WINDOW_DAYS + 1)
-    todo = u[week_over & [not (OUT / f"{a}.json").exists() for a in u["appid"]]]
+    todo = u[week_over & [not (OUT / f"{a}.json").exists() for a in u["appid"]]].head(args.limit)
     client = Paced(args.interval)
     for appid, rel in tqdm(zip(todo["appid"], todo["steam_release"]), total=len(todo), desc="first-week reviews"):
         start = int(rel.floor("D").timestamp())
