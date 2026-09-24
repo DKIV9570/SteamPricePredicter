@@ -11,7 +11,8 @@ PROCESSED = DATA / "processed"
 MODELS = ROOT / "models"  # trained model artifacts; versioned in git, unlike data/
 
 load_dotenv(ROOT / ".env")
-ITAD_API_KEY = (os.getenv("ITAD_API_KEY") or "").strip()
+# strip() + BOM: a key pasted/piped on Windows can arrive as "﻿<key>\r\n", which breaks the HTTP header
+ITAD_API_KEY = (os.getenv("ITAD_API_KEY") or "").strip().lstrip("﻿")
 # Per-account quota shown on https://isthereanydeal.com/apps/my/ (requests per 5 minutes)
 ITAD_RATE_PER_5MIN = int(os.getenv("ITAD_RATE_PER_5MIN") or 100)
 

@@ -19,6 +19,8 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 330
+    outputs:
+      published: ${{ steps.pages.outcome }}
     env:
       # Raw data lives in a PRIVATE repo's release (it's third-party data we may not
       # redistribute). DATA_REPO_TOKEN: fine-grained token, Contents read/write on that repo only.
@@ -44,6 +46,7 @@ jobs:
           python -m pricepredicter.bundle unpack
 
       - name: Update data and predictions
+        id: update
         run: python -m pricepredicter.daily
 
       - name: Save data
@@ -52,12 +55,22 @@ jobs:
           gh release upload data data-bundle.tar.gz --clobber -R "$DATA_REPO"
 
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - id: pages
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
+      # Best-effort steps (price refresh, data collection) that failed: the site above is still
+      # published, but the run is marked failed so GitHub emails the owner
+      - name: Flag failed steps
+        if: steps.update.outputs.degraded != ''
+        run: |
+          echo "::error::These steps failed: ${{ steps.update.outputs.degraded }} (see the 'Update data and predictions' log)"
+          exit 1
+
   deploy:
     needs: update
+    if: ${{ !cancelled() && needs.update.outputs.published == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

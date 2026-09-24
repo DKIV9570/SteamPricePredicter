@@ -11,6 +11,7 @@ Actions time limit.
     python -m pricepredicter.daily
 """
 import json
+import os
 import subprocess
 import sys
 import time
@@ -25,6 +26,9 @@ YOUNG_DAYS = 60             # re-fetch SteamSpy tags while a game is this young.
 YOUNG_REFRESH_DAYS = 7      # ...at most once a week
 
 
+FAILED: list[str] = []
+
+
 def run(module: str, *args, required: bool = False) -> bool:
     t = time.time()
     print(f"\n=== {module} {' '.join(map(str, args))[:80]}", flush=True)
@@ -32,6 +36,8 @@ def run(module: str, *args, required: bool = False) -> bool:
     print(f"=== {module}: {'ok' if ok else 'FAILED'} in {time.time() - t:.0f}s", flush=True)
     if required and not ok:
         raise SystemExit(f"{module} failed")
+    if not ok:
+        FAILED.append(module)
     return ok
 
 
@@ -71,7 +77,12 @@ def main():
     run("fetch_steamspy_details", "--interval", 1.05, *(["--refresh", *retag] if retag else []))
     run("build_content", required=True)
     run("export_site", required=True)
-    print(f"\ndaily update done in {(time.time() - t0) / 60:.0f} min")
+    print(f"\ndaily update done in {(time.time() - t0) / 60:.0f} min"
+          + (f"; FAILED (best-effort): {', '.join(FAILED)}" if FAILED else ""))
+    # The site still gets published, but the workflow flags the run so failures don't go unnoticed
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"degraded={' '.join(FAILED)}\n")
 
 
 if __name__ == "__main__":
