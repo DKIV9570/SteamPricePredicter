@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>等不等 · Wait or Buy</title>
+<meta name="description" content="Steam 折扣预测：想要的折扣要等多久？ / Steam discount forecasts: how long until the price you want?">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏳</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">⏳</span>
+    <div>
+      <h1 data-i18n="title">等不等</h1>
+      <p class="tagline" data-i18n="tagline">想要的折扣，要等多久？</p>
+    </div>
+  </div>
+  <button id="lang" class="lang" type="button" aria-label="Switch language">EN</button>
+</header>
+
+<main>
+  <section class="search">
+    <label for="q" class="sr-only" data-i18n="searchLabel">搜索游戏</label>
+    <input id="q" type="search" autocomplete="off" spellcheck="false"
+           data-i18n-placeholder="searchPlaceholder" placeholder="游戏名、appid 或 Steam 商店链接">
+    <ul id="suggest" class="suggest" role="listbox" hidden></ul>
+    <p id="nomatch" class="nomatch" data-i18n="noMatch" hidden>没找到这个游戏。目前收录约 4 万款 2014 年以后发售的付费游戏，新游戏会在发售后自动加入。</p>
+  </section>
+
+  <section id="empty" class="empty">
+    <p data-i18n="emptyHint">搜索一款游戏，看看你想要的折扣大概什么时候会来。</p>
+    <p class="examples"><span data-i18n="try">试试：</span>
+      <a href="#app=2638890&cut=30">Onimusha: Way of the Sword</a> ·
+      <a href="#app=2186680&cut=50">Warhammer 40,000: Rogue Trader</a> ·
+      <a href="#app=1245620&cut=50">ELDEN RING</a>
+    </p>
+  </section>
+
+  <section id="notfound" class="empty" hidden>
+    <p data-i18n="notFound">数据库里还没有这个游戏。目前收录约 4 万款 2014 年以后发售的付费游戏。</p>
+  </section>
+
+  <article id="result" class="card" hidden>
+    <div class="game">
+      <img id="cover" alt="" loading="lazy">
+      <div class="game-info">
+        <h2><a id="title" target="_blank" rel="noopener"></a></h2>
+        <p id="alttitle" class="alttitle" hidden></p>
+        <p id="prices" class="prices"></p>
+        <p id="status" class="status"></p>
+      </div>
+    </div>
+
+    <div class="target">
+      <span class="target-label" data-i18n="targetLabel">我想等到</span>
+      <div id="cuts" class="cuts" role="radiogroup"></div>
+      <div class="price-input">
+        <span data-i18n="orPrice">或者目标价</span>
+        <span class="dollar">$</span><input id="tprice" type="number" min="0" step="0.01" inputmode="decimal">
+      </div>
+    </div>
+
+    <p id="verdict" class="verdict"></p>
+    <ul id="bars" class="bars"></ul>
+    <p class="fineprint" data-i18n="cumulative">概率为累计值：到该时间点为止，价格是否至少降到过一次目标价。折扣按首发价计算，永久降价也算。</p>
+  </article>
+</main>
+
+<footer>
+  <p><span data-i18n="data">价格数据来自</span> <a href="https://isthereanydeal.com" target="_blank" rel="noopener">IsThereAnyDeal</a>
+    · <span data-i18n="usd">美区价格（美元）；Steam 大促的折扣比例各区基本一致</span></p>
+  <p><span data-i18n="updated">数据更新于</span> <span id="updated">—</span> · <span data-i18n="disclaimer">预测仅供参考</span>
+    · <a href="https://github.com/DKIV9570/SteamPricePredicter" target="_blank" rel="noopener">GitHub</a></p>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+﻿segment rows: 4,381,195 {'train': 2761504, 'test': 1056172, 'valid': 563519}
+oracle coverage (games whose publisher has other games): {'少量(1-2)': 1.0, '成熟(3+)': 1.0, '新发行商(0)': 0.26}
+trained no-sim: 235 trees
+trained full: 231 trees
+trained oracle: 211 trees
+        lookup        no-sim          full        oracle                  
+           AUC    准确率    AUC    准确率    AUC    准确率    AUC    准确率          n
+全部       0.811  0.790  0.868  0.823  0.867  0.822  0.875  0.828  1056172.0
+少量(1-2)  0.826  0.795  0.879  0.829  0.880  0.826  0.890  0.836   169203.0
+成熟(3+)   0.835  0.806  0.926  0.868  0.926  0.866  0.936  0.876   245498.0
+新发行商(0)  0.800  0.782  0.837  0.804  0.835  0.804  0.841  0.808   641471.0

@@ -1,0 +1,67 @@
+name: Daily update
+
+on:
+  schedule:
+    # Steam sales start 10:00 Pacific (17:00 UTC in summer, 18:00 in winter); run after that
+    - cron: "30 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      # Raw data lives in a PRIVATE repo's release (it's third-party data we may not
+      # redistribute). DATA_REPO_TOKEN: fine-grained token, Contents read/write on that repo only.
+      GH_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
+      DATA_REPO: DKIV9570/SteamPricePredicter-data
+      ITAD_API_KEY: ${{ secrets.ITAD_API_KEY }}
+      ITAD_RATE_PER_5MIN: "1000"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Download data
+        run: |
+          gh release download data --pattern data-bundle.tar.gz -R "$DATA_REPO" \
+            || { echo "::error::Cannot read the data repo. Has DATA_REPO_TOKEN expired? Create a new one and run: gh secret set DATA_REPO_TOKEN"; exit 1; }
+          python -m pricepredicter.bundle unpack
+
+      - name: Update data and predictions
+        run: python -m pricepredicter.daily
+
+      - name: Save data
+        run: |
+          python -m pricepredicter.bundle pack
+          gh release upload data data-bundle.tar.gz --clobber -R "$DATA_REPO"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,11 @@
+# Pinned: models/vectorizer.pkl (scikit-learn) and models/model.txt (LightGBM) must load
+# with the versions they were trained with.
+pandas==2.2.3
+numpy==2.3.5
+pyarrow==23.0.1
+scipy==1.17.1
+scikit-learn==1.8.0
+lightgbm==4.6.0
+requests==2.32.5
+python-dotenv==1.2.2
+tqdm==4.67.1
