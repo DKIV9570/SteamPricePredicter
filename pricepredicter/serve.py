@@ -16,8 +16,8 @@ import pandas as pd
 
 from .config import MODELS, PROCESSED
 from .features import build_game_table
-from .reach import (CUT_TOL, VELOCITY, attach_features, best_cut_by_age, expand_rows, landmark_states,
-                    price_timeline, regular_sale_depths, static_extras, velocity_features)
+from .reach import (CUT_TOL, VELOCITY, add_major_participation, attach_features, best_cut_by_age, expand_rows,
+                    landmark_states, price_timeline, regular_sale_depths, static_extras, velocity_features)
 from .sale_calendar import all_majors
 from .similarity import game_knn_features, publisher_knn_features
 
@@ -87,7 +87,7 @@ def predict_now(feats: dict, ref: dict, art: Artifacts, now: pd.Timestamp, thres
     asked = set(thresholds)
     thresholds = sorted(asked | set(STANDARD_CUTS)) if asked else []
     sales = ref["sales"][ref["sales"]["appid"].isin(g["appid"])]
-    states = landmark_states(g, tl, sales, now, at=now)
+    states = add_major_participation(landmark_states(g, tl, sales, now, at=now), g, sales, ref["majors"])
     rows = expand_rows(states, tl, ref["majors"], now, thresholds=thresholds, predict=True,
                        hist=regular_sale_depths(g, sales))
     if rows.empty:

@@ -5,8 +5,9 @@ import pandas as pd
 
 from .config import PROCESSED
 from .modeling import feature_sets, load_model_table
-from .reach import (EARLY_REVIEWS, STATE, TASK, VELOCITY, attach_features, best_cut_by_age, expand_rows,
-                    landmark_states, price_timeline, regular_sale_depths, static_extras, velocity_features)
+from .reach import (EARLY_REVIEWS, STATE, TASK, VELOCITY, add_major_participation, attach_features,
+                    best_cut_by_age, expand_rows, landmark_states, price_timeline, regular_sale_depths,
+                    static_extras, velocity_features)
 from .similarity import GameVectorizer
 
 
@@ -20,7 +21,7 @@ def build_reach_dataset():
     best = best_cut_by_age(g, tl)
     extra = static_extras(g, best, vec)
     sales = pd.read_parquet(PROCESSED / "sales.parquet")
-    states = landmark_states(g, tl, sales, data_end)
+    states = add_major_participation(landmark_states(g, tl, sales, data_end), g, sales, majors)
     rows = expand_rows(states, tl, majors, data_end, hist=regular_sale_depths(g, sales))
 
     static_cols = feature_sets(g)["E +首月评测"]

@@ -26,7 +26,8 @@ LANDMARK_OFFSET_DAYS = 1
 
 STATE = ["lw", "best_cut_so_far", "price_ratio_now", "regular_ratio_now", "on_sale_now", "n_sales_so_far",
          "last_sale_cut", "prev_cut", "cut_trend", "weeks_since_sale", "sales_since_deeper",
-         "floor_cut_so_far", "n_regular_sales"]
+         "floor_cut_so_far", "n_regular_sales",
+         "maj_n_past", "maj_share_joined", "maj_joined_last", "maj_type_n_past", "maj_type_share_joined"]
 TASK = ["threshold", "gap_to_target", "reached_before", "horizon_days", "majors_in_horizon", "days_to_next_major",
         "n_sales_ge_target", "share_ge_target"]
 EARLY_REVIEWS = ["log_w1_reviews", "w1_score"]
@@ -111,6 +112,55 @@ def velocity_features(keys: pd.DataFrame, months: pd.DataFrame, data_end: pd.Tim
     k = keys[["appid", "L"]].drop_duplicates().copy()
     k["month"] = (k["L"].dt.to_period("M") - 1).dt.to_timestamp()  # last fully ended month
     return k.merge(grid[["appid", "month"] + VELOCITY], on=["appid", "month"], how="left").drop(columns="month")
+
+
+MAJOR_JOIN_DAYS = 2        # on sale within this many days of a major's start = joined it
+MAJOR_ELIGIBLE_DAYS = 30   # majors this soon after launch don't count (launch cooldown)
+
+
+def add_major_participation(states: pd.DataFrame, g: pd.DataFrame, sales: pd.DataFrame,
+                            majors: pd.DataFrame) -> pd.DataFrame:
+    """Which past major sales did the game take part in? Overall, the last one, and the same
+    kind as the next one (Elden Ring joins every Winter and Summer Sale, never the Autumn one).
+    Only majors that had started by each moment L count."""
+    m = majors.sort_values("start").reset_index(drop=True)
+    m["seen_at"] = m["start"] + pd.Timedelta(days=MAJOR_JOIN_DAYS)
+
+    # every (game, eligible major) pair, and whether a sale was running at the major's start
+    pairs = g[["appid", "t0"]].merge(m[["start", "name", "seen_at"]], how="cross")
+    pairs = pairs[pairs["start"] >= pairs["t0"] + pd.Timedelta(days=MAJOR_ELIGIBLE_DAYS)]
+    s = sales[sales["appid"].isin(g["appid"])][["appid", "start", "end"]].copy()
+    for c in ["start", "end"]:
+        s[c] = s[c].dt.tz_convert("US/Pacific").dt.tz_localize(None).astype("datetime64[ns]")
+    s = s.rename(columns={"start": "s_start", "end": "s_end"}).sort_values("s_start")
+    pairs["probe"] = pairs["start"] + pd.Timedelta(days=MAJOR_JOIN_DAYS)
+    pairs = pd.merge_asof(pairs.sort_values("probe"), s, left_on="probe", right_on="s_start", by="appid",
+                          direction="backward")
+    pairs["joined"] = (pairs["s_start"].notna() & (pairs["s_end"].isna() | (pairs["s_end"] >= pairs["start"]))).astype(int)
+
+    pairs = pairs.sort_values(["appid", "start"])
+    pairs["cum_n"] = pairs.groupby("appid").cumcount() + 1
+    pairs["cum_joined"] = pairs.groupby("appid")["joined"].cumsum()
+    pairs["cum_type_n"] = pairs.groupby(["appid", "name"]).cumcount() + 1
+    pairs["cum_type_joined"] = pairs.groupby(["appid", "name"])["joined"].cumsum()
+
+    x = states.copy()
+    x["L"] = x["L"].astype("datetime64[ns]")
+    i = np.searchsorted(m["start"].to_numpy("datetime64[ns]"), x["L"].to_numpy("datetime64[ns]"), side="right")
+    x["next_name"] = m["name"].reindex(i).fillna("").to_numpy()  # "" = no known major ahead
+    x = x.sort_values("L")
+    right = pairs.sort_values("seen_at")
+    over = pd.merge_asof(x[["appid", "L"]], right[["appid", "seen_at", "cum_n", "cum_joined", "joined"]],
+                         left_on="L", right_on="seen_at", by="appid", direction="backward")
+    x["maj_n_past"] = over["cum_n"].fillna(0).to_numpy()
+    x["maj_share_joined"] = (over["cum_joined"] / over["cum_n"]).to_numpy()
+    x["maj_joined_last"] = over["joined"].to_numpy()
+    typ = pd.merge_asof(x[["appid", "next_name", "L"]].rename(columns={"next_name": "name"}),
+                        right[["appid", "name", "seen_at", "cum_type_n", "cum_type_joined"]],
+                        left_on="L", right_on="seen_at", by=["appid", "name"], direction="backward")
+    x["maj_type_n_past"] = typ["cum_type_n"].fillna(0).to_numpy()
+    x["maj_type_share_joined"] = (typ["cum_type_joined"] / typ["cum_type_n"]).to_numpy()
+    return x.drop(columns="next_name")
 
 
 def price_timeline(g: pd.DataFrame, changes: pd.DataFrame) -> pd.DataFrame:
