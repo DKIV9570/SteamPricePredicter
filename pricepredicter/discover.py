@@ -1,8 +1,15 @@
-"""Find games worth adding: Steam's "popular new releases" and "top sellers" lists, minus
-what the catalog already has. New finds get a SteamSpy appdetails record (publisher,
-developer, price, tags), which goes both into catalog.json and data/raw/steamspy_details/.
+"""Find games worth adding and put them in the catalog.
 
-    python -m pricepredicter.discover [--top-sellers 500]
+SteamSpy's owner estimates (what the original catalog was ranked by) badly undercount games
+from the last year or two — Anno 117 shows "0 .. 20,000" — so recent hits were missing.
+Candidates now come from:
+  - Steam "popular new releases" and the full Steam top-sellers list
+  - IsThereAnyDeal's most-waitlisted games: people waiting for a discount, i.e. our users
+Each new paid game gets a SteamSpy appdetails record (publisher, developer, price, tags),
+stored in catalog.json and data/raw/steamspy_details/. Candidates that turn out free (or
+unknown to SteamSpy) are remembered and not re-checked for a while.
+
+    python -m pricepredicter.discover [--waitlisted 30000]
 """
 import argparse
 import json
@@ -11,10 +18,13 @@ import time
 
 import requests
 
-from .config import RAW, USER_AGENT
+from .config import RAW, STEAM_SHOP_ID, USER_AGENT
+from .itad import ITADClient
 
 SEARCH = "https://store.steampowered.com/search/results/"
 PAGE = 100
+REJECTED = RAW / "discover_rejected.json"
+RECHECK_DAYS = 30
 
 
 def steam_list(filter_: str, limit: int, session) -> list[int]:
@@ -32,37 +42,67 @@ def steam_list(filter_: str, limit: int, session) -> list[int]:
     return ids
 
 
-def main(top_sellers: int = 500) -> list[int]:
+def itad_most_waitlisted(limit: int) -> list[int]:
+    """Steam appids of ITAD's most-waitlisted *games* (DLC excluded), most wanted first."""
+    client = ITADClient()
+    gids = []
+    for offset in range(0, limit, 50):
+        page = client._request("GET", "/stats/most-waitlisted/v1", params={"offset": offset, "limit": 50})
+        if not page:
+            break
+        gids += [x["id"] for x in page if x.get("type") == "game"]
+    apps = []
+    for i in range(0, len(gids), 200):
+        res = client._request("POST", f"/lookup/shop/{STEAM_SHOP_ID}/id/v1", json=gids[i:i + 200])
+        for gid in gids[i:i + 200]:
+            # a game can map to several Steam apps (editions); keep them all
+            apps += [int(s.split("/")[1]) for s in (res.get(gid) or []) if s.startswith("app/")]
+    return apps
+
+
+def main(waitlisted: int = 30000) -> list[int]:
     s = requests.Session()
     s.headers["User-Agent"] = USER_AGENT
-    found = steam_list("popularnew", 1000, s) + steam_list("topsellers", top_sellers, s)
+    found = steam_list("popularnew", 1000, s) + steam_list("topsellers", 10000, s)
+    try:
+        found += itad_most_waitlisted(waitlisted)
+    except Exception as e:  # one source failing shouldn't stop the others
+        print(f"ITAD waitlist ranking unavailable: {e}")
     catalog_path = RAW / "catalog.json"
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-    new = [a for a in dict.fromkeys(found) if str(a) not in catalog]
-    print(f"listed {len(set(found))} games, {len(new)} not in the catalog")
+    rejected = json.loads(REJECTED.read_text(encoding="utf-8")) if REJECTED.exists() else {}
+    now = time.time()
+    new = [a for a in dict.fromkeys(found) if str(a) not in catalog
+           and now - rejected.get(str(a), 0) > RECHECK_DAYS * 86400]
+    print(f"listed {len(set(found))} games, {len(new)} new candidates")
 
     details_dir = RAW / "steamspy_details"
     details_dir.mkdir(parents=True, exist_ok=True)
     added = []
-    for appid in new:
+    for n, appid in enumerate(new, 1):
         time.sleep(1.05)  # SteamSpy: 1 request / second
         try:
             d = s.get("https://steamspy.com/api.php", params={"request": "appdetails", "appid": appid},
                       timeout=60).json()
         except (requests.RequestException, ValueError):
-            continue
+            continue  # transient; tried again next run
         if not d.get("name") or int(d.get("initialprice") or 0) <= 0:
-            continue  # unknown to SteamSpy yet, or free-to-play
+            rejected[str(appid)] = now  # free-to-play, or not known to SteamSpy yet
+            continue
         catalog[str(appid)] = {k: d.get(k) for k in ["appid", "name", "developer", "publisher", "owners",
                                                       "price", "initialprice", "discount"]}
         (details_dir / f"{appid}.json").write_text(json.dumps(d), encoding="utf-8")
         added.append(appid)
+        if n % 200 == 0:  # checkpoint long backfills
+            catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+            REJECTED.write_text(json.dumps(rejected), encoding="utf-8")
     catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+    REJECTED.write_text(json.dumps(rejected), encoding="utf-8")
     print(f"added {len(added)} paid games to the catalog")
     return added
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--top-sellers", type=int, default=500)
-    main(ap.parse_args().top_sellers)
+    ap.add_argument("--waitlisted", type=int, default=30000)
+    main(ap.parse_args().waitlisted)
