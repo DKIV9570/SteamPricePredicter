@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>等不等 · Wait or Buy</title>
 <meta name="description" content="Steam 折扣预测：想要的折扣要等多久？ / Steam discount forecasts: how long until the price you want?">
+<!-- link previews (WeChat, Discord, Twitter/X, forums) -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://dkiv9570.github.io/SteamPricePredicter/">
+<meta property="og:title" content="等不等 · Steam 折扣预测">
+<meta property="og:description" content="想要的折扣，要等多久？输入游戏和心理价位，看下次大促、3 个月、半年、一年内降到这个价的概率。 / How long until the Steam discount you want?">
+<meta property="og:image" content="https://dkiv9570.github.io/SteamPricePredicter/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏳</text></svg>">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -26,7 +35,8 @@
     <input id="q" type="search" autocomplete="off" spellcheck="false"
            data-i18n-placeholder="searchPlaceholder" placeholder="游戏名、appid 或 Steam 商店链接">
     <ul id="suggest" class="suggest" role="listbox" hidden></ul>
-    <p id="nomatch" class="nomatch" data-i18n="noMatch" hidden>没找到这个游戏。目前收录约 4 万款 2014 年以后发售的付费游戏，新游戏会在发售后自动加入。</p>
+    <p id="nomatch" class="nomatch" hidden><span data-i18n="noMatch">没找到这个游戏。目前收录约 4 万款 2014 年以后发售的付费游戏，新游戏会在发售后自动加入。</span>
+      <a id="request" target="_blank" rel="noopener" data-i18n="requestGame">申请收录</a></p>
   </section>
 
   <section id="empty" class="empty">
@@ -65,6 +75,7 @@
     <p id="verdict" class="verdict"></p>
     <ul id="bars" class="bars"></ul>
     <p class="fineprint" data-i18n="cumulative">概率为累计值：到该时间点为止，价格是否至少降到过一次目标价。折扣按首发价计算，永久降价也算。</p>
+    <p class="fineprint"><a id="report" target="_blank" rel="noopener" data-i18n="report">预测看起来不对？告诉我们</a></p>
   </article>
 </main>
 
@@ -72,6 +83,7 @@
   <p><span data-i18n="data">价格数据来自</span> <a href="https://isthereanydeal.com" target="_blank" rel="noopener">IsThereAnyDeal</a>
     · <span data-i18n="usd">美区价格（美元）；Steam 大促的折扣比例各区基本一致</span></p>
   <p><span data-i18n="updated">数据更新于</span> <span id="updated">—</span> · <span data-i18n="disclaimer">预测仅供参考</span>
+    · <a href="https://github.com/DKIV9570/SteamPricePredicter/issues/new" target="_blank" rel="noopener" data-i18n="feedback">反馈建议</a>
     · <a href="https://github.com/DKIV9570/SteamPricePredicter" target="_blank" rel="noopener">GitHub</a></p>
 </footer>
 <script src="app.js"></script>

@@ -73,6 +73,7 @@ h1 { margin: 0; font-size: 24px; letter-spacing: 0.02em; }
 .suggest .alt { color: var(--muted); font-size: 12px; }
 .suggest .alt:empty { display: none; }
 .nomatch { margin: 10px 4px 0; color: var(--muted); font-size: 13px; }
+.nomatch a { margin-left: 4px; white-space: nowrap; }
 .alttitle { margin: -2px 0 4px; color: var(--muted); font-size: 13px; }
 
 .empty { color: var(--ink-2); text-align: center; padding: 48px 0; }

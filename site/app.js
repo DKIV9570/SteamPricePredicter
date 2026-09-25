@@ -1,6 +1,10 @@
 "use strict";
 // Static front end: all predictions are precomputed daily into data/*.json.
 
+const ISSUES = "https://github.com/DKIV9570/SteamPricePredicter/issues/new";
+// GoatCounter site code (https://www.goatcounter.com, free, cookie-free). "" disables analytics.
+const GOATCOUNTER = "";
+
 const I18N = {
   zh: {
     title: "等不等", tagline: "想要的折扣，要等多久？", searchLabel: "搜索游戏",
@@ -8,6 +12,7 @@ const I18N = {
     emptyHint: "搜索一款游戏，看看你想要的折扣大概什么时候会来。", try: "试试：",
     notFound: "数据库里还没有这个游戏。目前收录约 4 万款 2014 年以后发售的付费游戏。",
     noMatch: "没找到这个游戏。目前收录约 4 万款 2014 年以后发售的付费游戏，新游戏会在发售后自动加入。",
+    requestGame: "申请收录 →", report: "预测看起来不对？告诉我们 →", feedback: "反馈建议",
     targetLabel: "我想等到", orPrice: "或者目标价",
     cumulative: "概率为累计值：到该时间点为止，价格是否至少降到过一次目标价。折扣按首发价计算，永久降价也算。",
     data: "价格数据来自", usd: "美区价格（美元）；Steam 大促的折扣比例各区基本一致",
@@ -37,6 +42,7 @@ const I18N = {
     emptyHint: "Search a game to see when the discount you want is likely to arrive.", try: "Try:",
     notFound: "This game isn't in the database yet. It covers ~40k paid games released since 2014.",
     noMatch: "No match. The database covers ~40k paid games released since 2014; new releases are added automatically.",
+    requestGame: "Request this game →", report: "Forecast looks off? Tell us →", feedback: "Feedback",
     targetLabel: "I'd wait for", orPrice: "or a target price",
     cumulative: "Probabilities are cumulative: will the price hit the target at least once by then. Discounts are measured against the launch price, so permanent price cuts count.",
     data: "Price data from", usd: "US prices (USD); Steam sale percentages are mostly the same in every region",
@@ -63,6 +69,24 @@ const I18N = {
 };
 
 const $ = id => document.getElementById(id);
+
+// ---------------------------------------------------------------- feedback & analytics
+const issueUrl = (title, body) =>
+  `${ISSUES}?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+
+function track(path, title) {
+  if (GOATCOUNTER && window.goatcounter && window.goatcounter.count) {
+    window.goatcounter.count({ path, title, event: true });
+  }
+}
+function loadAnalytics() {
+  if (!GOATCOUNTER) return;
+  const s = document.createElement("script");
+  s.async = true;
+  s.src = "https://gc.zgo.at/count.js";
+  s.dataset.goatcounter = `https://${GOATCOUNTER}.goatcounter.com/count`;
+  document.head.appendChild(s);
+}
 const state = { lang: "zh", meta: null, index: null, shards: {}, appid: null, rec: null, cut: 50, price: null };
 try { state.lang = localStorage.getItem("lang") || (navigator.language.startsWith("zh") ? "zh" : "en"); } catch (_) {}
 const t = () => I18N[state.lang];
@@ -134,6 +158,10 @@ async function suggest(q) {
   });
   box.hidden = hits.length === 0;
   $("nomatch").hidden = hits.length > 0;
+  if (!hits.length) {
+    $("request").href = issueUrl(`[收录请求 / Game request] ${q.trim()}`,
+      `搜索词 / Search: ${q.trim()}\n\nSteam 商店链接（可选）/ Steam store link (optional):\n`);
+  }
 }
 function pick(appid) {
   $("suggest").hidden = true;
@@ -257,6 +285,20 @@ function renderResult() {
       bars.appendChild(li);
     }
   }
+
+  // Feedback link pre-filled with exactly what the user saw
+  const shown = p ? windows().filter(w => p[w.i] != null).map(w => `- ${w.label}: ${p[w.i]}%`).join("\n") : "";
+  $("report").href = issueUrl(`[预测反馈 / Forecast feedback] ${rec.t} (${state.appid})`, [
+    `游戏 / Game: ${rec.t} — ${store}`,
+    `目标 / Target: ${cut}% off ($${(rec.lp * (1 - cut / 100)).toFixed(2)})`,
+    `结论 / Verdict: ${text}`,
+    shown,
+    `数据更新于 / Data from: ${state.meta.updated}`,
+    `页面 / Page: ${location.href}`,
+    "",
+    "哪里不对？/ What looks wrong?",
+    "",
+  ].filter(s => s !== null).join("\n"));
 }
 
 // ---------------------------------------------------------------- routing
@@ -272,10 +314,12 @@ async function route() {
   state.appid = appid;
   state.rec = appid ? await loadGame(appid) : null;
   renderResult();
+  if (state.rec) track(`game/${appid}`, state.rec.t);  // which games people look up
 }
 
 // ---------------------------------------------------------------- wiring
 async function init() {
+  loadAnalytics();
   renderStatic();
   state.meta = await getJSON("data/meta.json");
   renderStatic();
@@ -283,7 +327,11 @@ async function init() {
   let timer;
   q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => suggest(q.value), 120); });
   q.addEventListener("focus", () => { loadIndex(); if (q.value) suggest(q.value); });
-  q.addEventListener("blur", () => setTimeout(() => { $("suggest").hidden = true; }, 150));
+  q.addEventListener("blur", () => setTimeout(() => {
+    $("suggest").hidden = true;
+    // searches that found nothing = games people want that the database lacks
+    if (!$("nomatch").hidden) track(`nomatch/${norm(q.value).slice(0, 60)}`, q.value.slice(0, 60));
+  }, 150));
   q.addEventListener("keydown", e => {
     const items = [...$("suggest").querySelectorAll("li")];
     const cur = items.findIndex(li => li.getAttribute("aria-selected") === "true");
