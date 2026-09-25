@@ -28,17 +28,34 @@ RECHECK_DAYS = 30
 
 
 def steam_list(filter_: str, limit: int, session) -> list[int]:
+    """Appids from a Steam store search list. Rate limits end the listing early rather than
+    failing it: whatever was collected is still useful."""
     ids = []
     for start in range(0, limit, PAGE):
-        r = session.get(SEARCH, params={"filter": filter_, "category1": 998, "json": 1, "infinite": 1,
-                                        "start": start, "count": PAGE, "cc": "us", "l": "english"}, timeout=30)
-        r.raise_for_status()
-        d = r.json()
+        d = None
+        for attempt in range(4):
+            try:
+                r = session.get(SEARCH, params={"filter": filter_, "category1": 998, "json": 1, "infinite": 1,
+                                                "start": start, "count": PAGE, "cc": "us", "l": "english"},
+                                timeout=30)
+                if r.status_code == 429:
+                    time.sleep(60 * (attempt + 1))
+                    continue
+                r.raise_for_status()
+                d = r.json()
+                break
+            except (requests.RequestException, ValueError):
+                time.sleep(10 * (attempt + 1))
+        if d is None:
+            print(f"steam '{filter_}' list stopped at {start}")
+            break
         page = [int(x) for x in re.findall(r'data-ds-appid="(\d+)"', d.get("results_html", ""))]
         ids += page
-        if len(page) < PAGE or start + PAGE >= d.get("total_count", 0):
+        # A page can hold fewer than PAGE apps (bundles carry no appid), so only an empty page
+        # or the reported total ends the listing
+        if not page or start + PAGE >= d.get("total_count", 0):
             break
-        time.sleep(1.5)
+        time.sleep(2)
     return ids
 
 
@@ -50,7 +67,8 @@ def itad_most_waitlisted(limit: int) -> list[int]:
         page = client._request("GET", "/stats/most-waitlisted/v1", params={"offset": offset, "limit": 50})
         if not page:
             break
-        gids += [x["id"] for x in page if x.get("type") == "game"]
+        # untyped entries are kept; build_dataset keeps only ITAD type "game" anyway
+        gids += [x["id"] for x in page if x.get("type") in ("game", None)]
     apps = []
     for i in range(0, len(gids), 200):
         res = client._request("POST", f"/lookup/shop/{STEAM_SHOP_ID}/id/v1", json=gids[i:i + 200])
@@ -63,7 +81,8 @@ def itad_most_waitlisted(limit: int) -> list[int]:
 def main(waitlisted: int = 30000) -> list[int]:
     s = requests.Session()
     s.headers["User-Agent"] = USER_AGENT
-    found = steam_list("popularnew", 1000, s) + steam_list("topsellers", 10000, s)
+    # the store serves ~3,000 top sellers before it starts refusing deeper pages
+    found = steam_list("popularnew", 1000, s) + steam_list("topsellers", 3000, s)
     try:
         found += itad_most_waitlisted(waitlisted)
     except Exception as e:  # one source failing shouldn't stop the others
