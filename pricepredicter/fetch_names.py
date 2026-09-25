@@ -18,7 +18,9 @@ from tqdm import tqdm
 from .config import PROCESSED, RAW, USER_AGENT
 
 URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
-LANGS = {"schinese": "CN", "tchinese": "TW"}
+# Japanese too: many Japanese games have no Chinese store name, and Chinese players search
+# them by a Chinese reading of the Japanese title (see names.py)
+LANGS = {"schinese": "CN", "tchinese": "TW", "japanese": "JP"}
 BATCH = 100
 OUT = RAW / "names.json"
 
@@ -52,7 +54,9 @@ def main():
         todo = args.appids
     else:
         g = pd.read_parquet(PROCESSED / "games.parquet")
-        todo = [a for a in g.loc[g["usable"], "appid"] if a not in names]
+        # "tried" = has the key for every language (even if the store had no name for it)
+        todo = [a for a in g.loc[g["usable"], "appid"]
+                if a not in names or not all(k in names[a] for k in LANGS)]
     s = requests.Session()
     s.headers["User-Agent"] = USER_AGENT
     for i in tqdm(range(0, len(todo), BATCH), desc="names"):
@@ -63,8 +67,9 @@ def main():
                 if release:
                     names[appid]["release"] = release
             time.sleep(0.5)
-        for appid in batch:
-            names.setdefault(appid, {})  # mark as tried, even if the store returned nothing
+        for appid in batch:  # mark as tried, even if the store returned nothing
+            for lang in LANGS:
+                names.setdefault(appid, {}).setdefault(lang, None)
         if i // BATCH % 20 == 0:
             OUT.write_text(json.dumps(names, ensure_ascii=False), encoding="utf-8")
     OUT.write_text(json.dumps(names, ensure_ascii=False), encoding="utf-8")

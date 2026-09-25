@@ -1,8 +1,8 @@
 """Precompute predictions for every game and write the static website's data files.
 
 site/data/meta.json        update time, targets, windows, upcoming major sales
-site/data/index.json       [[appid, title, (schinese), (tchinese)], ...] most-wanted first (for search);
-                           localized names only where they differ from the title
+site/data/index.json       [[appid, title, chinese_display_or_"", *search_aliases], ...] most-wanted
+                           first; aliases (names.py) are matched but not shown
 site/data/g/<k>.json       per-game records, sharded by appid % N_SHARDS
 
     python -m pricepredicter.export_site
@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from .config import RAW
+from .names import display_and_aliases
 from .serve import game_features, load_artifacts, load_reference, predict_now, upcoming_majors
 
 SITE_DATA = Path(__file__).resolve().parent.parent / "site" / "data"
@@ -47,10 +48,10 @@ def main():
             key = (appid, cut)
             probs.append(None if key not in tab.index else
                          [None if pd.isna(v) else int(v) for v in tab.loc[key].to_numpy()])
-        zh = names.get(int(appid), {}).get("schinese")
+        zh, _ = display_and_aliases(g.at[appid, "title"], names.get(int(appid), {}))
         records[int(appid)] = {
             "t": g.at[appid, "title"],
-            **({"zh": zh} if zh and zh != g.at[appid, "title"] else {}),
+            **({"zh": zh} if zh else {}),
             "lp": round(float(g.at[appid, "launch_price"]), 2),
             "cp": round(float(g.at[appid, "launch_price"] * s["price_ratio_now"]), 2),
             "best": int(round(s["best_cut_so_far"])),
@@ -70,13 +71,10 @@ def main():
     order = g["waitlisted"].fillna(0).sort_values(ascending=False).index
     index = []
     for a in order:
-        title, loc = g.at[a, "title"], names.get(int(a), {})
-        sc, tc = loc.get("schinese"), loc.get("tchinese")
-        entry = [int(a), title]
-        if (sc and sc != title) or (tc and tc not in (title, sc)):
-            entry.append(sc if sc and sc != title else "")
-        if tc and tc not in (title, sc):
-            entry.append(tc)
+        zh, aliases = display_and_aliases(g.at[a, "title"], names.get(int(a), {}))
+        entry = [int(a), g.at[a, "title"]]
+        if zh or aliases:
+            entry += [zh, *aliases]
         index.append(entry)
     (SITE_DATA / "index.json").write_text(
         json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

@@ -71,9 +71,10 @@ const t = () => I18N[state.lang];
 const getJSON = url => fetch(url).then(r => { if (!r.ok) throw new Error(url); return r.json(); });
 async function loadIndex() {
   if (!state.index) {
-    state.index = (await getJSON("data/index.json")).map(([id, title, sc = "", tc = ""]) => {
-      const names = [title, sc, tc].filter(Boolean).map(norm);
-      return { id, title, zh: sc || tc, names, compact: names.map(n => n.replace(/ /g, "")) };
+    // [appid, title, chinese display name or "", ...hidden search aliases]
+    state.index = (await getJSON("data/index.json")).map(([id, title, zh = "", ...aliases]) => {
+      const names = [title, zh, ...aliases].filter(Boolean).map(norm);
+      return { id, title, zh, names, compact: names.map(n => n.replace(/ /g, "")) };
     });
   }
   return state.index;

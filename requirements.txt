@@ -9,3 +9,4 @@ lightgbm==4.6.0
 requests==2.32.5
 python-dotenv==1.2.2
 tqdm==4.67.1
+opencc-python-reimplemented==0.1.7
