@@ -3,7 +3,7 @@
 
 const ISSUES = "https://github.com/DKIV9570/SteamPricePredicter/issues/new";
 // GoatCounter site code (https://www.goatcounter.com, free, cookie-free). "" disables analytics.
-const GOATCOUNTER = "";
+const GOATCOUNTER = "dkiv";
 
 const I18N = {
   zh: {
