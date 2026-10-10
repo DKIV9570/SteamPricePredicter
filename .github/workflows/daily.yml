@@ -54,6 +54,17 @@ jobs:
           python -m pricepredicter.bundle pack
           gh release upload data data-bundle.tar.gz --clobber -R "$DATA_REPO"
 
+      # Weekly, and just before each major sale: keep the predictions so they can be scored
+      # against what happened (analysis/11_sale_scorecard.py)
+      - name: Archive predictions
+        run: |
+          snap=$(python -m pricepredicter.snapshot)
+          if [ -n "$snap" ]; then
+            gh release view predictions -R "$DATA_REPO" >/dev/null 2>&1 \
+              || gh release create predictions -R "$DATA_REPO" --title "Prediction snapshots" --notes "site/data snapshots for scoring forecasts"
+            gh release upload predictions "$snap" --clobber -R "$DATA_REPO"
+          fi
+
       - uses: actions/configure-pages@v5
       - id: pages
         uses: actions/upload-pages-artifact@v3

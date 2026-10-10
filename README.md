@@ -37,6 +37,16 @@
 - 查表基线：按目标折扣、时间范围、游戏年龄、历史最低折扣分组，取历史上的达成率
 - 完整结果见 [reports/](reports/)（AUC 0.920，查表基线 0.876）
 
+**真实检验：2026 年秋促（10/1–10/8）**。用秋促前一周（9/25）网站上的预测，对照秋促的实际价格：
+
+| 秋促时能否降到目标价 | 判断准确率 | 说"会"时真的降了 | 说"不会"时真的没降 |
+|---|---|---|---|
+| 全部（3.9 万款游戏、38 万个预测） | **90.5%** | 85.2% | 93.8% |
+| 首发价 ≥ $20 | **91.4%** | 88.2% | 95.3% |
+| 最受关注的 2,000 款 | **92.5%** | 89.1% | 96.6% |
+
+这比上面的测试集数字高，是因为大促前一周的大多数游戏都已有稳定的打折记录；刚发售、还没打过折的新游戏更难预测（约 77%）。详见 [reports/scorecard_autumn_2026.txt](reports/scorecard_autumn_2026.txt)。
+
 ### 原理
 
 - **数据**：[IsThereAnyDeal](https://isthereanydeal.com) 的 Steam 价格历史，SteamSpy 用户标签，Steam 商店信息与评测数量。收录范围来自 Steam 热销榜、热门新品和 ITAD 愿望单榜
@@ -115,6 +125,8 @@ Tested on ~10.7k games released after July 2023 that the model never saw during 
 - **The probabilities are calibrated**: when it says X%, it happens within 2 points of X% of the time
 - Lookup baseline: the historical hit rate for the same target, window, game age and discount history
 - Full results in [reports/](reports/) (AUC 0.920 vs. 0.876 for the baseline)
+
+**Real-world check: Autumn Sale 2026 (Oct 1–8).** The site's forecasts from a week before (Sep 25), scored against actual prices: **90.5%** of verdicts correct over 39k games and 379k (game, target) forecasts; **91.4%** for games launched at $20+; **92.5%** for the 2,000 most-waitlisted games. Higher than the held-out numbers above because most games already have a discount history a week before a sale; brand-new games are harder (~77%). See [reports/scorecard_autumn_2026.txt](reports/scorecard_autumn_2026.txt).
 
 ### How it works
 
